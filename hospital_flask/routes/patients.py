@@ -1,25 +1,164 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from flask import Blueprint, request, jsonify
 from routes.db_config import get_db_connection
+from utils.auth import token_required
 
-patients = Blueprint('patients', __name__, url_prefix='/patients')
+patients = Blueprint('patients', __name__)
 
-@patients.route("/list")
+@patients.route("/", methods=['GET'])
+@token_required
 def patient_list():
-    if "user_id" not in session:
-        flash("Please login first", "warning")
-        return redirect(url_for("auth.login"))
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM patients ORDER BY id DESC")
+        patient_data = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'patients': patient_data
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    
-    # Use your actual primary key column name instead of 'id'
-    cursor.execute("SELECT * FROM patients")  # Changed 'id' to 'patient_id'
-    
-    patient_data = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    
-    return render_template('patients.html', patients=patient_data)
+@patients.route("/", methods=['POST'])
+@token_required
+def add_patient():
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['name', 'age', 'gender', 'contact', 'address']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({'error': f'{field} is required'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO patients (name, age, gender, contact, address, email, medical_history)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (
+            data['name'],
+            data['age'],
+            data['gender'],
+            data['contact'],
+            data['address'],
+            data.get('email', ''),
+            data.get('medical_history', '')
+        ))
+        
+        conn.commit()
+        patient_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Patient added successfully',
+            'patient_id': patient_id
+        }), 201
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@patients.route("/<int:patient_id>", methods=['GET'])
+@token_required
+def get_patient(patient_id):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM patients WHERE id = %s", (patient_id,))
+        patient = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not patient:
+            return jsonify({'error': 'Patient not found'}), 404
+        
+        return jsonify({
+            'success': True,
+            'patient': patient
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@patients.route("/<int:patient_id>", methods=['PUT'])
+@token_required
+def update_patient(patient_id):
+    try:
+        data = request.get_json()
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if patient exists
+        cursor.execute("SELECT id FROM patients WHERE id = %s", (patient_id,))
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Patient not found'}), 404
+        
+        # Update patient
+        cursor.execute("""
+            UPDATE patients 
+            SET name = %s, age = %s, gender = %s, contact = %s, 
+                address = %s, email = %s, medical_history = %s
+            WHERE id = %s
+        """, (
+            data.get('name'),
+            data.get('age'),
+            data.get('gender'),
+            data.get('contact'),
+            data.get('address'),
+            data.get('email', ''),
+            data.get('medical_history', ''),
+            patient_id
+        ))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Patient updated successfully'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@patients.route("/<int:patient_id>", methods=['DELETE'])
+@token_required
+def delete_patient(patient_id):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if patient exists
+        cursor.execute("SELECT id FROM patients WHERE id = %s", (patient_id,))
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Patient not found'}), 404
+        
+        # Delete patient
+        cursor.execute("DELETE FROM patients WHERE id = %s", (patient_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Patient deleted successfully'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @patients.route("/add", methods=["GET", "POST"])
 def add_patient():

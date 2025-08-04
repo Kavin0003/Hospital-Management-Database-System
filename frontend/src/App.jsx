@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
+import Patients from './components/Patients';
 import './index.css';
 
 function App() {
@@ -67,7 +68,7 @@ function App() {
           {/* Placeholder routes for other pages */}
           <Route 
             path="/patients" 
-            element={user ? <div className="p-8"><h1 className="text-2xl">Patients Module - Coming Soon</h1></div> : <Navigate to="/login" />} 
+            element={user ? <Patients user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} 
           />
           <Route 
             path="/doctors" 
